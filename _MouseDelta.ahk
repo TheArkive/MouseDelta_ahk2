@@ -2,36 +2,54 @@
 ; === Example ===================================
 ; ===============================================
 
-; g := Gui("+AlwaysOnTop 0x2000000","MouseDelta") ; 0x2000000 = double buffering, less flicker of controls
-; g.OnEvent("close",gui_close)
+g := Gui("+AlwaysOnTop 0x2000000 +OwnDialogs","MouseDelta") ; 0x2000000 = double buffering, less flicker of controls
+g.OnEvent("close",gui_close)
 
-; ctl := g.Add("Edit","w300 h150 vMyEdit ReadOnly","Move the mouse or click a button")
-; ctl.SetFont("s10","Consolas")
-; g.Show()
+ctl := g.Add("text","w300 h300 vMyEdit ReadOnly","Move the mouse or click a button")
+ctl.SetFont("s10","Consolas")
+g.Add("Button","xm w150 vStart","Start").OnEvent("click",ctl_events)
+g.Add("Button","x+0 w150 vStop","Stop").OnEvent("click",ctl_events)
+g.Show()
+
+ctl_events(ctl, info) {
+    If (ctl.name = "Start") {
+        ctl.gui.md.Start()
+        ctl.gui["MyEdit"].Text := "LastError: " ctl.gui.md.LastError
+    } Else If (ctl.name = "Stop") {
+        ctl.gui.md.Stop()
+        ctl.gui["MyEdit"].Text := "LastError: " ctl.gui.md.LastError
+    }
+}
 
 
-; gui_close(g) {
-    ; ExitApp
-; }
+gui_close(g) {
+    Global md
+    If md.state
+        md.Stop()
+    ExitApp
+}
 
-; md := MouseDelta("MouseEvent")
+md := MouseDelta(MouseEvent)
+g.md := md
 
-; md.SetState(1)
+md.SetState(1)
 
-; MouseEvent(MouseID, obj) { ; parameters for callback function
-    ; Global g
+MouseEvent(md, MouseID, obj) { ; parameters for callback function
+    Global g
     
-    ; msg := "x/y: " obj.x ", " obj.y "`r`n"  ; all obj propertes are displayed here
-         ; . "x/y Delta: " obj.xD " / " obj.yD "`r`n"
-         ; . " LButton: " obj.b1 "`r`n"
-         ; . " RButton: " obj.b2 "`r`n"
-         ; . " MButton: " obj.b3 "`r`n"
-         ; . "XButton1: " obj.b4 "`r`n"
-         ; . "XButton2: " obj.b5 "`r`n"
-         ; . "Wheel: " obj.mw
+    msg := "LastError: " md.LastError "`r`n`r`n"
+         . "MouseID: " Format("0x{:X}",MouseID) "`r`n"
+         . "x/y: " obj.x ", " obj.y "`r`n"  ; all obj propertes are displayed here
+         . "x/y Delta: " obj.xD " / " obj.yD "`r`n"
+         . "  LButton: " obj.b1 "`r`n"
+         . "  RButton: " obj.b2 "`r`n"
+         . "  MButton: " obj.b3 "`r`n"
+         . " XButton1: " obj.b4 "`r`n"
+         . " XButton2: " obj.b5 "`r`n"
+         . "    Wheel: " obj.mw "`r`n"
     
-    ; g["MyEdit"].value := msg
-; }
+    g["MyEdit"].value := msg
+}
 
 ; ======================================================================
 ; MouseDelta class
@@ -40,23 +58,28 @@
 ; ======================================================================
 Class MouseDelta {
     State := 0
+    DevSize := 8 + A_PtrSize
+    devMult := 1
+    LastError := 0
+    RAWINPUTDEVICE := Buffer(this.DevSize * this.devMult)
+    
     __New(callback) {
         this.MouseMovedFn := ObjBindMethod(this,"MouseMoved")
-        this.Callback := callback
+        , this.Callback := callback
     }
 
     Start() {
-        static DevSize := 8 + A_PtrSize, RIDEV_INPUTSINK := 0x00001100 ; Register mouse for WM_INPUT messages.
+        Static RIDEV_INPUTSINK := 0x00000100 ; Register mouse for WM_INPUT messages.
         
-        RAWINPUTDEVICE := Buffer(DevSize)
-        oGui := Gui()           ; WM_INPUT needs a hwnd to route to, so get the hwnd of the AHK Gui.
-        oGui.Opt("ToolWindow")
-        oGui.Show()             ; window must be shown apparently ...
-        this.gui := oGui
+        RAWINPUT_GUI := Gui()           ; WM_INPUT needs a hwnd to route to, so get the hwnd of the AHK Gui.
+        RAWINPUT_GUI.Opt("ToolWindow")
+        RAWINPUT_GUI.Show()             ; window must be shown apparently ...
+        this.gui := RAWINPUT_GUI
         
-        NumPut("UShort",1,"UShort",2,"UInt",RIDEV_INPUTSINK,"UPtr",oGui.hwnd,RAWINPUTDEVICE) ; populate RAWINPUTDEVICE
-        this.RAWINPUTDEVICE := RAWINPUTDEVICE
-        result := DllCall("RegisterRawInputDevices", "UPtr", RAWINPUTDEVICE.Ptr, "UInt", 1, "UInt", DevSize )
+        NumPut("UShort",1,"UShort",2,"UInt",RIDEV_INPUTSINK,"UPtr",RAWINPUT_GUI.hwnd, this.RAWINPUTDEVICE.ptr) ; populate RAWINPUTDEVICE
+        
+        result := DllCall("RegisterRawInputDevices", "UPtr", this.RAWINPUTDEVICE.Ptr, "UInt", this.devMult, "UInt", this.DevSize )
+        this.LastError := A_LastError
         
         OnMessage(0x00FF, this.MouseMovedFn)
         this.State := 1
@@ -65,11 +88,13 @@ Class MouseDelta {
     
     Stop() {
         static RIDEV_REMOVE := 0x00000001
-        static DevSize := 8 + A_PtrSize
         OnMessage(0x00FF, this.MouseMovedFn, 0)
-        RAWINPUTDEVICE := this.RAWINPUTDEVICE
-        NumPut("UInt",RIDEV_REMOVE,RAWINPUTDEVICE,4)
-        DllCall("RegisterRawInputDevices", "UPtr", RAWINPUTDEVICE.Ptr, "UInt", 1, "UInt", DevSize )
+        
+        NumPut("UInt", RIDEV_REMOVE, "UPtr", 0, this.RAWINPUTDEVICE, 4)
+        
+        DllCall("RegisterRawInputDevices", "UPtr", this.RAWINPUTDEVICE.Ptr, "UInt", this.devMult, "UInt", this.DevSize)
+        this.LastError := A_LastError
+        
         this.gui.Destroy()
         this.State := 0
         return this    ; allow chaining
@@ -90,53 +115,44 @@ Class MouseDelta {
     
     MouseMoved(wParam, lParam, msg, hwnd) { ; Called when the mouse moved and get raw input stats.
         Critical
-        static DeviceSize := 2 * A_PtrSize, iSize := 0, sz := 0
-        Static pcbSize:=8+2*A_PtrSize, offsets := {x: (20+A_PtrSize*2), y: (24+A_PtrSize*2)}, uRawInput 
-        Static b1 := 0, b2 := 0, b3 := 0, b4 := 0, b5 := 0, mw := 0
-        
-        static axes := {x: 1, y: 2}
+        Static headerSz   := 2 * A_PtrSize
+        Static pcbSize    := 8 + headerSz
+        Static uRawInput  := {ptr:0}, structSize := 0
         
         header := Buffer(pcbSize, 0) ; Get hDevice from RAWINPUTHEADER to identify which mouse this data came from
         If !DllCall("GetRawInputData", "UPtr", lParam, "uint", 0x10000005
-                                     , "UPtr", header.ptr, "Uint*", &pcbSize, "Uint", pcbSize)
+                                     , "UPtr", header.ptr, "Uint*", &pcbSize, "Uint", pcbSize) {
+            this.LastError := A_LastError
             Return 0
-        ThisMouse := NumGet(header, 8, "UPtr")
-        
-        if (!iSize) { ; Find size of rawinput data - only needs to be run the first time.
-            r := DllCall("GetRawInputData", "UInt", lParam, "UInt", 0x10000003
-                                          , "UPtr", 0, "UInt*", &iSize, "UInt", 8 + (A_PtrSize * 2))
-            uRawInput := Buffer(iSize)
         }
-        sz := iSize    ; param gets overwritten with # of bytes output, so preserve iSize
+        
+        hwID := NumGet(header, 8, "UPtr")
+        
+        If !structSize
+            structSize := NumGet(header, 4, "UInt")
+          , uRawInput := Buffer(structSize)
+        
         r := DllCall("GetRawInputData", "UInt", lParam, "UInt", 0x10000003               ; Get RawInput data
-                                      , "UPtr", uRawInput.ptr, "UInt*", &sz, "UInt", 8 + (A_PtrSize * 2))
+                                      , "UPtr", uRawInput.ptr, "UInt*", &structSize, "UInt", 8 + headerSz)
+        this.LastError := A_LastError
         
-        off := A_PtrSize * 2
-        xD := 0, yD := 0    ; Ensure we always report a number for an axis. Needed?
-        usFlags := NumGet(uRawInput, off, "UShort")
+        Static mFlags_off   := 12+headerSz, mData_off := 14+headerSz
+             , mXd_off      := 20+headerSz, mYd_off   := 24+headerSz
+             , mExtra_off   := 28+headerSz
+        Static b1 := 0, b2 := 0, b3 := 0, b4 := 0, b5 := 0, mw := 0
         
-        usButtonFlags := NumGet(uRawInput, off + 12, "UShort")
-        usButtonData := NumGet(uRawInput, off + 14, "Short")
+        flags := NumGet(uRawInput, mFlags_off, "UShort")    ; +12
+        data  := NumGet(uRawInput, mData_off, "Short")      ; +14
         
-        (usButtonFlags & 0x1) ? b1 := true : ""         ; LB down
-        (usButtonFlags & 0x2) ? b1 := false : ""        ; LB up
+        (flags & 0x1)   ? b1 := true : (flags & 0x2)   ? b1 := false : ""
+        (flags & 0x4)   ? b2 := true : (flags & 0x8)   ? b2 := false : ""
+        (flags & 0x10)  ? b3 := true : (flags & 0x20)  ? b3 := false : ""
+        (flags & 0x40)  ? b4 := true : (flags & 0x80)  ? b4 := false : ""
+        (flags & 0x100) ? b5 := true : (flags & 0x200) ? b5 := false : ""
+        (flags & 0x400) ? (mw := data) : (mw := 0) ; mouse wheel delta
         
-        (usButtonFlags & 0x4) ? b2 := true : ""         ; RB down
-        (usButtonFlags & 0x8) ? b2 := false : ""        ; RB up
-        
-        (usButtonFlags & 0x10) ? b3 := true : ""        ; MB down
-        (usButtonFlags & 0x20) ? b3 := false : ""       ; MB up
-        
-        (usButtonFlags & 0x40) ? b4 := true : ""        ; B4 down
-        (usButtonFlags & 0x80) ? b4 := false : ""       ; B4 up
-        
-        (usButtonFlags & 0x100) ? b5 := true : ""       ; B5 down
-        (usButtonFlags & 0x200) ? b5 := false : ""      ; B5 up
-        
-        (usButtonFlags & 0x400) ? (mw := usButtonData) : (mw := 0) ; mouse wheel delta
-        
-        xD := NumGet(uRawInput, offsets.x, "Int") ; x Delta
-        yD := NumGet(uRawInput, offsets.y, "Int") ; y Delta
+        xD := NumGet(uRawInput, mXd_off, "Int") ; x Delta
+        yD := NumGet(uRawInput, mYd_off, "Int") ; y Delta
         
         POINT := Buffer(8,0)
         DllCall("GetCursorPos","UPtr",POINT.ptr)
@@ -145,10 +161,12 @@ Class MouseDelta {
         
         obj := {x:x, y:y, xD:xD, yD:yD
               , b1:b1, b2:b2, b3:b3, b4:b4, b5:b5, mw:mw}
-
-        callback := this.Callback
-        %callback%(ThisMouse, obj)
+        
+        this.callback(hwID, obj)
     }
 }
 
 
+dbg(_in) {
+    OutputDebug "AHK: " _in
+}
