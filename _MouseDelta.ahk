@@ -71,12 +71,8 @@ Class MouseDelta {
     Start() {
         Static RIDEV_INPUTSINK := 0x00000100 ; Register mouse for WM_INPUT messages.
         
-        RAWINPUT_GUI := Gui()           ; WM_INPUT needs a hwnd to route to, so get the hwnd of the AHK Gui.
-        RAWINPUT_GUI.Opt("ToolWindow")
-        RAWINPUT_GUI.Show()             ; window must be shown apparently ...
-        this.gui := RAWINPUT_GUI
-        
-        NumPut("UShort",1,"UShort",2,"UInt",RIDEV_INPUTSINK,"UPtr",RAWINPUT_GUI.hwnd, this.RAWINPUTDEVICE.ptr) ; populate RAWINPUTDEVICE
+        nothing := !(IsSet(_oGui) && IsObject(_oGui)) ? (this.gui := _oGui := Gui()) : ""
+        NumPut("UShort",1,"UShort",2,"UInt",RIDEV_INPUTSINK,"UPtr",_oGui.hwnd, this.RAWINPUTDEVICE.ptr) ; populate RAWINPUTDEVICE
         
         result := DllCall("RegisterRawInputDevices", "UPtr", this.RAWINPUTDEVICE.Ptr, "UInt", this.devMult, "UInt", this.DevSize )
         this.LastError := A_LastError
