@@ -158,6 +158,7 @@ Class MouseDelta {
         obj := {x:x, y:y, xD:xD, yD:yD
               , b1:b1, b2:b2, b3:b3, b4:b4, b5:b5, mw:mw}
         
+        Critical false
         this.callback(hwID, obj)
     }
 }
