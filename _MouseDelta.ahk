@@ -71,8 +71,7 @@ Class MouseDelta {
     Start() {
         Static RIDEV_INPUTSINK := 0x00000100 ; Register mouse for WM_INPUT messages.
         
-        nothing := !(IsSet(_oGui) && IsObject(_oGui)) ? (this.gui := _oGui := Gui()) : ""
-        NumPut("UShort",1,"UShort",2,"UInt",RIDEV_INPUTSINK,"UPtr",_oGui.hwnd, this.RAWINPUTDEVICE.ptr) ; populate RAWINPUTDEVICE
+        NumPut("UShort",1,"UShort",2,"UInt",RIDEV_INPUTSINK,"UPtr", A_ScriptHwnd, this.RAWINPUTDEVICE.ptr) ; populate RAWINPUTDEVICE
         
         result := DllCall("RegisterRawInputDevices", "UPtr", this.RAWINPUTDEVICE.Ptr, "UInt", this.devMult, "UInt", this.DevSize )
         this.LastError := A_LastError
@@ -91,7 +90,6 @@ Class MouseDelta {
         DllCall("RegisterRawInputDevices", "UPtr", this.RAWINPUTDEVICE.Ptr, "UInt", this.devMult, "UInt", this.DevSize)
         this.LastError := A_LastError
         
-        this.gui.Destroy()
         this.State := 0
         return this    ; allow chaining
     }
